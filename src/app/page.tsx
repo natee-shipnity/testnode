@@ -26,12 +26,37 @@ type BoardEvent = {
 };
 
 type WsMessage = {
-  type: 'hello' | 'pong' | 'echo' | 'board' | string;
+  type: 'hello' | 'pong' | 'echo' | 'board' | 'items' | string;
   data?: unknown;
   ts: number;
 };
 
 type Status = 'connecting' | 'open' | 'closed' | 'error';
+
+type Item = { id: number; name: string };
+
+const ITEM_POOL: Item[] = [
+  { id: 1, name: 'milk' },
+  { id: 2, name: 'bread' },
+  { id: 3, name: 'eggs' },
+  { id: 4, name: 'butter' },
+  { id: 5, name: 'cheese' },
+  { id: 6, name: 'yogurt' },
+  { id: 7, name: 'apple' },
+  { id: 8, name: 'banana' },
+  { id: 9, name: 'orange' },
+  { id: 10, name: 'lettuce' },
+  { id: 11, name: 'tomato' },
+  { id: 12, name: 'onion' },
+  { id: 13, name: 'potato' },
+  { id: 14, name: 'rice' },
+  { id: 15, name: 'pasta' },
+  { id: 16, name: 'chicken' },
+  { id: 17, name: 'beef' },
+  { id: 18, name: 'fish' },
+  { id: 19, name: 'soap' },
+  { id: 20, name: 'tissue' },
+];
 
 export default function Home() {
   const [status, setStatus] = useState<Status>('connecting');
@@ -44,7 +69,17 @@ export default function Home() {
     const ws = new WebSocket(`${API_WS}/v1/ws`);
     wsRef.current = ws;
 
-    ws.onopen = () => setStatus('open');
+    ws.onopen = () => {
+      setStatus('open');
+      // Publish item pool to backend so any connected Wails client picks it up.
+      ws.send(
+        JSON.stringify({
+          type: 'items',
+          data: ITEM_POOL,
+          ts: Date.now(),
+        }),
+      );
+    };
     ws.onclose = () => setStatus('closed');
     ws.onerror = () => setStatus('error');
     ws.onmessage = (e) => {
@@ -106,6 +141,22 @@ export default function Home() {
         ) : (
           <div className="text-zinc-500">waiting for button press…</div>
         )}
+      </section>
+
+      <section className="w-full max-w-3xl">
+        <h2 className="mb-2 text-sm uppercase tracking-wide text-zinc-500">
+          item pool published ({ITEM_POOL.length})
+        </h2>
+        <div className="flex flex-wrap gap-2 rounded-lg border border-zinc-300 bg-white p-3 text-xs shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+          {ITEM_POOL.map((it) => (
+            <span
+              key={it.id}
+              className="rounded border border-blue-300 bg-blue-50 px-2 py-1 text-blue-700 dark:border-blue-700 dark:bg-blue-900/30 dark:text-blue-200"
+            >
+              #{it.id} {it.name}
+            </span>
+          ))}
+        </div>
       </section>
 
       <section className="w-full max-w-3xl">
