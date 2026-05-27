@@ -6,8 +6,27 @@ const API_HTTP =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3005';
 const API_WS = API_HTTP.replace(/^http/, 'ws');
 
+type BoardEvent = {
+  time: string;
+  port: string;
+  kind:
+    | 'button'
+    | 'raw'
+    | 'frame'
+    | 'disconnect'
+    | 'error'
+    | 'info'
+    | 'uptime';
+  pin?: number;
+  text?: string;
+  hex?: string;
+  uptimeMs?: number;
+  bootEpochMs?: number;
+  error?: string;
+};
+
 type WsMessage = {
-  type: string;
+  type: 'hello' | 'pong' | 'echo' | 'board' | string;
   data?: unknown;
   ts: number;
 };
@@ -16,7 +35,9 @@ type Status = 'connecting' | 'open' | 'closed' | 'error';
 
 export default function Home() {
   const [status, setStatus] = useState<Status>('connecting');
-  const [messages, setMessages] = useState<WsMessage[]>([]);
+  const [events, setEvents] = useState<BoardEvent[]>([]);
+  const [lastPin, setLastPin] = useState<number | null>(null);
+  const blinkTimer = useRef<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -29,47 +50,99 @@ export default function Home() {
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data) as WsMessage;
-        setMessages((prev) => [msg, ...prev].slice(0, 20));
+        if (msg.type === 'board' && msg.data) {
+          const ev = msg.data as BoardEvent;
+          setEvents((prev) => [ev, ...prev].slice(0, 50));
+          if (ev.kind === 'button' && ev.pin != null) {
+            setLastPin(ev.pin);
+            if (blinkTimer.current) window.clearTimeout(blinkTimer.current);
+            blinkTimer.current = window.setTimeout(() => {
+              setLastPin(null);
+              blinkTimer.current = null;
+            }, 10000);
+          }
+        }
       } catch {
         // ignore non-JSON frames
       }
     };
 
-    return () => ws.close();
+    return () => {
+      ws.close();
+      if (blinkTimer.current) window.clearTimeout(blinkTimer.current);
+    };
   }, []);
 
-  const sendPing = () => {
-    wsRef.current?.send('ping from client');
-  };
-
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-zinc-50 p-8 font-mono dark:bg-black dark:text-zinc-100">
-      <h1 className="text-2xl font-semibold">box-client websocket</h1>
-      <p className="text-sm text-zinc-500">target: {API_WS}/v1/ws</p>
-      <div className="flex items-center gap-3">
-        <span
-          className={`inline-block h-3 w-3 rounded-full ${
-            status === 'open'
-              ? 'bg-green-500'
-              : status === 'connecting'
-              ? 'bg-yellow-500'
-              : 'bg-red-500'
-          }`}
-        />
-        <span className="text-sm">{status}</span>
-        <button
-          onClick={sendPing}
-          disabled={status !== 'open'}
-          className="rounded border border-zinc-300 px-3 py-1 text-sm disabled:opacity-40 dark:border-zinc-700"
-        >
-          send ping
-        </button>
-      </div>
-      <pre className="max-h-96 w-full max-w-2xl overflow-auto rounded-lg border border-zinc-300 bg-white p-4 text-xs shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-        {messages.length === 0
-          ? 'waiting for messages…'
-          : messages.map((m) => JSON.stringify(m)).join('\n')}
-      </pre>
+    <main className="flex min-h-screen flex-col items-center gap-6 bg-zinc-50 p-8 font-mono dark:bg-black dark:text-zinc-100">
+      <header className="flex w-full max-w-3xl items-center justify-between">
+        <h1 className="text-2xl font-semibold">box-client board feed</h1>
+        <div className="flex items-center gap-2">
+          <span
+            className={`inline-block h-3 w-3 rounded-full ${
+              status === 'open'
+                ? 'bg-green-500'
+                : status === 'connecting'
+                ? 'bg-yellow-500'
+                : 'bg-red-500'
+            }`}
+          />
+          <span className="text-sm">{status}</span>
+        </div>
+      </header>
+
+      <section
+        className={`flex h-40 w-full max-w-3xl flex-col items-center justify-center rounded-lg border text-center transition-all ${
+          lastPin != null
+            ? 'animate-pulse border-amber-400 bg-amber-100 text-amber-900 dark:border-amber-500 dark:bg-amber-900/40 dark:text-amber-200'
+            : 'border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900'
+        }`}
+      >
+        {lastPin != null ? (
+          <>
+            <div className="text-sm opacity-70">last button</div>
+            <div className="text-5xl font-bold">pin {lastPin}</div>
+          </>
+        ) : (
+          <div className="text-zinc-500">waiting for button press…</div>
+        )}
+      </section>
+
+      <section className="w-full max-w-3xl">
+        <h2 className="mb-2 text-sm uppercase tracking-wide text-zinc-500">
+          recent events
+        </h2>
+        <div className="max-h-96 overflow-auto rounded-lg border border-zinc-300 bg-white text-xs shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+          {events.length === 0 ? (
+            <div className="p-4 text-zinc-500">no events yet</div>
+          ) : (
+            <ul>
+              {events.map((ev, i) => (
+                <li
+                  key={i}
+                  className="border-b border-zinc-200 px-3 py-1.5 last:border-b-0 dark:border-zinc-800"
+                >
+                  <span className="mr-2 text-zinc-500">{ev.time}</span>
+                  <span className="mr-2 font-semibold uppercase">
+                    {ev.kind}
+                  </span>
+                  {ev.kind === 'button' && (
+                    <span className="text-amber-600 dark:text-amber-400">
+                      pin {ev.pin}
+                    </span>
+                  )}
+                  {ev.text && <span className="text-zinc-700 dark:text-zinc-300">{ev.text}</span>}
+                  {ev.error && (
+                    <span className="text-red-500"> {ev.error}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+
+      <p className="text-xs text-zinc-500">ws target: {API_WS}/v1/ws</p>
     </main>
   );
 }
