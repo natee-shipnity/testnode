@@ -62,7 +62,9 @@ export default function Home() {
   const [status, setStatus] = useState<Status>('connecting');
   const [events, setEvents] = useState<BoardEvent[]>([]);
   const [lastPin, setLastPin] = useState<number | null>(null);
+  const [green, setGreen] = useState(false);
   const blinkTimer = useRef<number | null>(null);
+  const greenTimer = useRef<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -85,7 +87,15 @@ export default function Home() {
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data) as WsMessage;
-        if (msg.type === 'board' && msg.data) {
+        if (msg.type === 'green') {
+          // pin 0 pressed on the SBG2 board: flash the panel green.
+          setGreen(true);
+          if (greenTimer.current) window.clearTimeout(greenTimer.current);
+          greenTimer.current = window.setTimeout(() => {
+            setGreen(false);
+            greenTimer.current = null;
+          }, 3000);
+        } else if (msg.type === 'board' && msg.data) {
           const ev = msg.data as BoardEvent;
           setEvents((prev) => [ev, ...prev].slice(0, 50));
           if (ev.kind === 'button' && ev.pin != null) {
@@ -105,6 +115,7 @@ export default function Home() {
     return () => {
       ws.close();
       if (blinkTimer.current) window.clearTimeout(blinkTimer.current);
+      if (greenTimer.current) window.clearTimeout(greenTimer.current);
     };
   }, []);
 
@@ -128,12 +139,16 @@ export default function Home() {
 
       <section
         className={`flex h-40 w-full max-w-3xl flex-col items-center justify-center rounded-lg border text-center transition-all ${
-          lastPin != null
+          green
+            ? 'animate-pulse border-green-500 bg-green-500 text-white dark:border-green-400 dark:bg-green-600'
+            : lastPin != null
             ? 'animate-pulse border-amber-400 bg-amber-100 text-amber-900 dark:border-amber-500 dark:bg-amber-900/40 dark:text-amber-200'
             : 'border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900'
         }`}
       >
-        {lastPin != null ? (
+        {green ? (
+          <div className="text-6xl font-bold tracking-wide">GREEN</div>
+        ) : lastPin != null ? (
           <>
             <div className="text-sm opacity-70">last button</div>
             <div className="text-5xl font-bold">pin {lastPin}</div>
