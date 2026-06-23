@@ -33,6 +33,18 @@ type WsMessage = {
 
 type Status = 'connecting' | 'open' | 'closed' | 'error';
 
+// Color signals the agent broadcasts on button presses (pin 0/1/2). Each maps
+// to its own bare WS message type, e.g. {type:"green"}.
+type FlashColor = 'green' | 'red' | 'white';
+
+const FLASH_COLORS: FlashColor[] = ['green', 'red', 'white'];
+
+const FLASH_STYLES: Record<FlashColor, string> = {
+  green: 'border-green-500 bg-green-500 text-white dark:border-green-400 dark:bg-green-600',
+  red: 'border-red-500 bg-red-500 text-white dark:border-red-400 dark:bg-red-600',
+  white: 'border-zinc-400 bg-white text-zinc-900 dark:border-zinc-300 dark:bg-zinc-100',
+};
+
 type Item = { id: number; name: string };
 
 const ITEM_POOL: Item[] = [
@@ -62,9 +74,9 @@ export default function Home() {
   const [status, setStatus] = useState<Status>('connecting');
   const [events, setEvents] = useState<BoardEvent[]>([]);
   const [lastPin, setLastPin] = useState<number | null>(null);
-  const [green, setGreen] = useState(false);
+  const [flash, setFlash] = useState<FlashColor | null>(null);
   const blinkTimer = useRef<number | null>(null);
-  const greenTimer = useRef<number | null>(null);
+  const flashTimer = useRef<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -87,13 +99,13 @@ export default function Home() {
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data) as WsMessage;
-        if (msg.type === 'green') {
-          // pin 0 pressed on the SBG2 board: flash the panel green.
-          setGreen(true);
-          if (greenTimer.current) window.clearTimeout(greenTimer.current);
-          greenTimer.current = window.setTimeout(() => {
-            setGreen(false);
-            greenTimer.current = null;
+        if (FLASH_COLORS.includes(msg.type as FlashColor)) {
+          // pin 0/1/2 pressed on the SBG2 board: flash the panel that color.
+          setFlash(msg.type as FlashColor);
+          if (flashTimer.current) window.clearTimeout(flashTimer.current);
+          flashTimer.current = window.setTimeout(() => {
+            setFlash(null);
+            flashTimer.current = null;
           }, 3000);
         } else if (msg.type === 'board' && msg.data) {
           const ev = msg.data as BoardEvent;
@@ -115,7 +127,7 @@ export default function Home() {
     return () => {
       ws.close();
       if (blinkTimer.current) window.clearTimeout(blinkTimer.current);
-      if (greenTimer.current) window.clearTimeout(greenTimer.current);
+      if (flashTimer.current) window.clearTimeout(flashTimer.current);
     };
   }, []);
 
@@ -139,15 +151,17 @@ export default function Home() {
 
       <section
         className={`flex h-40 w-full max-w-3xl flex-col items-center justify-center rounded-lg border text-center transition-all ${
-          green
-            ? 'animate-pulse border-green-500 bg-green-500 text-white dark:border-green-400 dark:bg-green-600'
+          flash
+            ? `animate-pulse ${FLASH_STYLES[flash]}`
             : lastPin != null
             ? 'animate-pulse border-amber-400 bg-amber-100 text-amber-900 dark:border-amber-500 dark:bg-amber-900/40 dark:text-amber-200'
             : 'border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900'
         }`}
       >
-        {green ? (
-          <div className="text-6xl font-bold tracking-wide">GREEN</div>
+        {flash ? (
+          <div className="text-6xl font-bold tracking-wide">
+            {flash.toUpperCase()}
+          </div>
         ) : lastPin != null ? (
           <>
             <div className="text-sm opacity-70">last button</div>
